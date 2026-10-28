@@ -67,7 +67,7 @@ jobs:
         shell: bash
         env:
           TARGET_URL: "https://jjjj88888.github.io/devops-pages-lab/version.txt"
-          EXPECTED_SHA: "${ 000000000000000000000000000000000000dead}"
+          EXPECTED_SHA: "${{ github.sha }}"
         run: |
           echo "=== BEGIN SMOKE TEST ==="
           echo "Target Health Check Endpoint: $TARGET_URL"
