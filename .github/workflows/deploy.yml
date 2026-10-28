@@ -1,0 +1,102 @@
+name: Production Release with Smoke Test
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & Fingerprint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub Pages Environment
+        uses: actions/configure-pages@v5
+
+      - name: Build Jekyll Site via Action
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+
+      - name: Inject Version Fingerprint (version.txt)
+        run: |
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "${{ github.sha }}" > ./_site/version.txt
+          echo "Generated version.txt content:"
+          cat ./_site/version.txt
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+
+  deploy:
+    name: Deploy to GitHub Pages CDN
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Site to Production
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  smoke-test:
+    name: Post-Deployment Smoke Test
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Live Deployment Fingerprint
+        shell: bash
+        env:
+          TARGET_URL: "https://jjjj88888.github.io/devops-pages-lab/version.txt"
+          EXPECTED_SHA: "${{ github.sha }}"
+        run: |
+          echo "=== BEGIN SMOKE TEST ==="
+          echo "Target Health Check Endpoint: $TARGET_URL"
+          echo "Expected Target Commit SHA  : $EXPECTED_SHA"
+
+          MAX_ATTEMPTS=8
+          SLEEP_SECONDS=10
+          ATTEMPT=1
+          MATCH=false
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT of $MAX_ATTEMPTS: Querying live endpoint..."
+            
+            # 使用 curl 抓取線上版本，強制繞過本地快取
+            LIVE_SHA=$(curl -sSL -H "Cache-Control: no-cache, no-store, must-revalidate" "$TARGET_URL" | tr -d '[:space:]')
+            echo "Endpoint returned: '$LIVE_SHA'"
+
+            if [ "$LIVE_SHA" = "$EXPECTED_SHA" ]; then
+              echo "✅ SUCCESS: Live site is actively serving commit fingerprint $EXPECTED_SHA!"
+              MATCH=true
+              break
+            else
+              echo "⚠️ WARNING: Version mismatch (CDN still propagating or serving stale cache)."
+              echo "Sleeping for $SLEEP_SECONDS seconds before retry..."
+              sleep $SLEEP_SECONDS
+              ATTEMPT=$((ATTEMPT + 1))
+            fi
+          done
+
+          if [ "$MATCH" = false ]; then
+            echo "❌ CRITICAL SMOKE TEST FAILURE: Live site failed to verify expected version within allowed SLA window."
+            exit 1
+          fi
+          echo "=== SMOKE TEST PASSED SUCCESSFULLY ==="
