@@ -1,0 +1,22 @@
+name: Update activity log
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # 每 6 小時自動同步一次
+  workflow_dispatch:       # 提供手動觸發按鈕，方便測試與 Demo
+
+permissions:
+  contents: read           # 預設僅需要讀取權限，寫入交由 PAT 授權
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Update Activity Log
+        uses: TheDanniCraft/activity-log@v1
+        with:
+          GITHUB_USERNAME: "[你的GitHub使用者名稱]"
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
